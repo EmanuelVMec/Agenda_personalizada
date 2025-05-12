@@ -163,7 +163,6 @@ export default function App() {
             <Text style={theme.buttonText}>Seleccionar Fecha y Hora</Text>
           </TouchableOpacity>
           <Text style={{ color: darkMode ? '#fff' : '#000', marginBottom: 10 }}>
-            {date.toLocaleString()}
           </Text>
 
           {showDatePicker && (
