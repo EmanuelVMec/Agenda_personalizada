@@ -20,10 +20,16 @@
         "foregroundImage": "./assets/splashultimate.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.emanuelvmec.Agenda"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "29de5094-93cf-4f29-ae7f-0f20bd010ac2"
+      }
     }
   }
 }

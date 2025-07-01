@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Switch, Animated, Easing, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import DateTimePicker, { Event } from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -28,10 +28,33 @@ export default function App() {
   const [formVisible, setFormVisible] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [darkMode, setDarkMode] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const backgroundAnim = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
     loadTasksFromStorage();
-  }, []);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    animateBackground();
+    return () => clearInterval(timer);
+  }, [darkMode]);
+
+  const animateBackground = () => {
+    backgroundAnim.setValue(0);
+    Animated.loop(
+      Animated.timing(backgroundAnim, {
+        toValue: 1,
+        duration: 8000,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      })
+    ).start();
+  };
+
+  const interpolatedBackground = backgroundAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: darkMode ? ['#121212', '#1e1e1e'] : ['#f5e6f2', '#fdeff9'],
+  });
 
   const saveTasksToStorage = async (tasks: Task[]) => {
     try {
@@ -54,59 +77,62 @@ export default function App() {
   };
 
   const scheduleNotification = async (title: string, body: string, date: Date) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-      },
-      trigger: date,
-    });
-  };
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body,
+    },
+    trigger: {
+      type: 'date',
+      date: date,
+    },
+  });
+};
 
-  const handleDateChange = (_: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
+
+  const handleDateChange = (_event: Event, selectedDate?: Date) => {
     if (selectedDate) {
-      setDate(selectedDate);
+      setDate(new Date(selectedDate));
+      setShowDatePicker(false);
       setTimeout(() => setShowTimePicker(true), 300);
+    } else {
+      setShowDatePicker(false);
     }
   };
 
-  const handleTimeChange = (_: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      setDate(new Date(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        selectedTime.getHours(),
-        selectedTime.getMinutes()
-      ));
-    }
-  };
+const handleTimeChange = (_event: any, selectedTime?: Date) => {
+  if (selectedTime) {
+    const newDate = new Date(date);
+    newDate.setHours(selectedTime.getHours());
+    newDate.setMinutes(selectedTime.getMinutes());
+    newDate.setSeconds(0);
+    newDate.setMilliseconds(0);
+    setDate(newDate);
+  }
+  setShowTimePicker(false);
+};
+
+
+
 
   const addTask = async () => {
     if (!title.trim()) return;
-
     const taskDate = new Date(date);
     const now = new Date();
     if (taskDate <= now) {
       Alert.alert('La fecha debe ser en el futuro.');
       return;
     }
-
     const newTask: Task = {
       title,
       description,
       dateTime: taskDate.toLocaleString(),
       dateObj: taskDate,
     };
-
     const updatedTasks = [...tasks, newTask];
     setTasks(updatedTasks);
     await saveTasksToStorage(updatedTasks);
-
     await scheduleNotification(`Recordatorio: ${title}`, description || '¡No olvides tu tarea!', taskDate);
-
     setTitle('');
     setDescription('');
     setDate(new Date());
@@ -120,146 +146,209 @@ export default function App() {
     await saveTasksToStorage(updated);
   };
 
-  const isExpired = (taskDate: Date) => {
-    const now = new Date();
-    return taskDate <= now;
-  };
+  const isExpired = (taskDate: Date) => new Date() >= new Date(taskDate);
 
-  const theme = darkMode ? stylesDark : stylesLight;
+  const styles = getStyles(darkMode);
+  const currentHour = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <View style={[styles.container, theme.container]}>
-      <Text style={theme.title}>Gestor de Tareas</Text>
+    <Animated.View style={[styles.container, { backgroundColor: interpolatedBackground }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 50 }}>
+            <View style={styles.headerBox}>
+              <Text style={styles.agendaTitle}>A G E N D A</Text>
+              <View style={styles.timeBox}>
+                <Text style={styles.dateBig}>{currentTime.getDate()}</Text>
+                <View>
+                  <Text style={styles.dateSmall}>{currentTime.toLocaleString('default', { month: 'short' }).toUpperCase()}</Text>
+                  <Text style={styles.timeSmall}>{currentHour}</Text>
+                </View>
+              </View>
+              <View style={styles.switchRow}>
+                <Text style={styles.switchLabel}>{darkMode ? '🌙 Modo Oscuro' : '☀️ Modo Claro'}</Text>
+                <Switch value={darkMode} onValueChange={setDarkMode} />
+              </View>
+            </View>
 
-      <TouchableOpacity style={theme.toggle} onPress={() => setDarkMode(!darkMode)}>
-        <Text style={theme.toggleText}>{darkMode ? '☀️ Modo Claro' : '🌙 Modo Oscuro'}</Text>
-      </TouchableOpacity>
+            {!formVisible && (
+              <TouchableOpacity style={styles.button} onPress={() => setFormVisible(true)}>
+                <Text style={styles.buttonText}>➕ Nueva Tarea</Text>
+              </TouchableOpacity>
+            )}
 
-      {!formVisible && (
-        <TouchableOpacity style={theme.button} onPress={() => setFormVisible(true)}>
-          <Text style={theme.buttonText}>➕ Crear Tarea</Text>
-        </TouchableOpacity>
-      )}
+            {formVisible && (
+              <View style={styles.formBox}>
+                <TextInput style={styles.input} placeholder="Título" placeholderTextColor="#999" value={title} onChangeText={setTitle} />
+                <TextInput style={styles.textArea} placeholder="Descripción" placeholderTextColor="#999" multiline numberOfLines={4} value={description} onChangeText={setDescription} />
+                <TouchableOpacity style={styles.buttonSmall} onPress={() => setShowDatePicker(true)}>
+                  <Text style={styles.buttonTextSmall}>📅 Seleccionar Fecha y Hora</Text>
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker value={date} mode="date" is24Hour display="default" onChange={handleDateChange} />
+                )}
+                {showTimePicker && (
+                  <DateTimePicker value={date} mode="time" is24Hour display="default" onChange={handleTimeChange} />
+                )}
+                <TouchableOpacity style={styles.buttonSmall} onPress={addTask}>
+                  <Text style={styles.buttonTextSmall}>✅ Guardar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.buttonCancel} onPress={() => setFormVisible(false)}>
+                  <Text style={styles.buttonTextSmall}>❌ Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-      {formVisible && (
-        <View>
-          <TextInput
-            style={[styles.input, theme.input]}
-            placeholder="Título de la tarea"
-            placeholderTextColor={darkMode ? "#ccc" : "#888"}
-            value={title}
-            onChangeText={setTitle}
-          />
-
-          <TextInput
-            style={[styles.input, theme.input]}
-            placeholder="Descripción"
-            placeholderTextColor={darkMode ? "#ccc" : "#888"}
-            value={description}
-            onChangeText={setDescription}
-          />
-
-          <TouchableOpacity onPress={() => setShowDatePicker(true)} style={theme.button}>
-            <Text style={theme.buttonText}>Seleccionar Fecha y Hora</Text>
-          </TouchableOpacity>
-          <Text style={{ color: darkMode ? '#fff' : '#000', marginBottom: 10 }}>
-          </Text>
-
-          {showDatePicker && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              is24Hour={true}
-              display="default"
-              onChange={handleDateChange}
-            />
-          )}
-
-          {showTimePicker && (
-            <DateTimePicker
-              value={date}
-              mode="time"
-              is24Hour={true}
-              display="default"
-              onChange={handleTimeChange}
-            />
-          )}
-
-          <TouchableOpacity style={theme.button} onPress={addTask}>
-            <Text style={theme.buttonText}>✅ Guardar Tarea</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[theme.button, { backgroundColor: '#ccc' }]} onPress={() => setFormVisible(false)}>
-            <Text style={{ color: '#000' }}>⬅️ Volver</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <FlatList
-        data={tasks}
-        keyExtractor={(_, index) => index.toString()}
-        renderItem={({ item, index }) => (
-          <View style={[
-            styles.taskContainer,
-            theme.taskContainer,
-            isExpired(item.dateObj) && { backgroundColor: '#FFC0CB' }
-          ]}>
-            <Text style={theme.taskTitle}>{item.title}</Text>
-            <Text style={theme.taskDescription}>{item.description}</Text>
-            <Text style={theme.taskDate}>{item.dateTime}</Text>
-            <TouchableOpacity onPress={() => deleteTask(index)}>
-              <Text style={styles.delete}>🗑️</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
-    </View>
+            {tasks.map((item, index) => (
+              <View key={index.toString()} style={[styles.taskCard, isExpired(item.dateObj) && styles.taskExpired]}>
+                <Text style={styles.taskTitle}>{item.title}</Text>
+                <Text style={styles.taskDescription}>{item.description}</Text>
+                <Text style={styles.taskDate}>{item.dateTime}</Text>
+                <TouchableOpacity onPress={() => deleteTask(index)}>
+                  <Text style={styles.delete}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, paddingTop: 60 },
-  input: {
-    borderWidth: 1,
+// Mantener estilos actuales...
+
+
+const getStyles = (darkMode: boolean) => StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 50,
+  },
+  headerBox: {
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  agendaTitle: {
+    fontSize: 40,
+    letterSpacing: 4,
+    fontWeight: 'bold',
+    color: darkMode ? '#fff' : '#6a1b9a',
+    marginBottom: 25,
+  },
+  timeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 7,
+  },
+  dateBig: {
+    fontSize: 100,
+    fontWeight: 'bold',
+    color: darkMode ? '#fff' : '#000',
+    marginRight: 10,
+  },
+  dateSmall: {
+    fontSize: 40,
+    color: darkMode ? '#ccc' : '#333',
+  },
+  timeSmall: {
+    fontSize: 40,
+    color: darkMode ? '#aaa' : '#555',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 7,
+  },
+  switchLabel: {
+    fontSize: 17,
+    marginRight: 10,
+    color: darkMode ? '#fff' : '#6a1b9a',
+  },
+  button: {
+    backgroundColor: darkMode ? '#673ab7' : '#ab47bc',
     padding: 12,
-    marginVertical: 8,
-    borderRadius: 10,
-    elevation: 2,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  taskContainer: {
-    padding: 15,
-    marginVertical: 8,
-    borderRadius: 10,
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  formBox: {
+  backgroundColor: darkMode ? '#2e2e2e' : '#fff',
+  borderRadius: 15,
+  padding: 15,
+  marginBottom: 20,
+  elevation: 5,
+  width: '100%', // Añadido para ocupar todo el ancho
+  alignSelf: 'center',
+},
+  input: {
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+    paddingVertical: 8,
+    marginBottom: 12,
+    fontSize: 16,
+    color: darkMode ? '#fff' : '#000',
+  },
+  textArea: {
     borderWidth: 1,
-    elevation: 2,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+    height: 80,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+    fontSize: 16,
+    color: darkMode ? '#fff' : '#000',
   },
-  delete: { fontSize: 18, marginTop: 5, textAlign: 'right' },
-});
-
-const stylesLight = StyleSheet.create({
-  container: { backgroundColor: '#f0f4f8' },
-  title: { fontSize: 26, fontWeight: 'bold', marginBottom: 10, color: '#333' },
-  input: { borderColor: '#ccc', color: '#000', backgroundColor: '#fff' },
-  button: { backgroundColor: '#4CAF50', padding: 12, borderRadius: 10, alignItems: 'center', marginVertical: 5 },
-  buttonText: { color: '#fff', fontWeight: 'bold' },
-  taskContainer: { backgroundColor: '#fff', borderColor: '#ddd' },
-  taskTitle: { fontWeight: 'bold', fontSize: 18, color: '#000' },
-  taskDescription: { color: '#555', marginTop: 4 },
-  taskDate: { color: '#999', marginTop: 4 },
-  toggle: { marginBottom: 15, alignItems: 'flex-start' },
-  toggleText: { color: '#4CAF50' },
-});
-
-const stylesDark = StyleSheet.create({
-  container: { backgroundColor: '#121212' },
-  title: { fontSize: 26, fontWeight: 'bold', marginBottom: 10, color: '#fff' },
-  input: { borderColor: '#555', color: '#fff', backgroundColor: '#1e1e1e' },
-  button: { backgroundColor: '#03DAC5', padding: 12, borderRadius: 10, alignItems: 'center', marginVertical: 5 },
-  buttonText: { color: '#000', fontWeight: 'bold' },
-  taskContainer: { backgroundColor: '#1e1e1e', borderColor: '#444' },
-  taskTitle: { fontWeight: 'bold', fontSize: 18, color: '#fff' },
-  taskDescription: { color: '#ccc', marginTop: 4 },
-  taskDate: { color: '#aaa', marginTop: 4 },
-  toggle: { marginBottom: 15, alignItems: 'flex-start' },
-  toggleText: { color: '#03DAC5' },
+  buttonSmall: {
+    backgroundColor: darkMode ? '#9575cd' : '#ce93d8',
+    padding: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  buttonCancel: {
+    backgroundColor: darkMode ? '#c2185b' : '#f8bbd0',
+    padding: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonTextSmall: {
+    color: darkMode ? '#fff' : '#4a148c',
+    fontWeight: '600',
+  },
+  taskCard: {
+    backgroundColor: darkMode ? '#3a3a3a' : '#ffffff',
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 15,
+    elevation: 3,
+  },
+  taskExpired: {
+    backgroundColor: darkMode ? '#c2185b' : '#f8bbd0',
+  },
+  taskTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: darkMode ? '#fff' : '#6a1b9a',
+  },
+  taskDescription: {
+    fontSize: 15,
+    color: darkMode ? '#ddd' : '#555',
+    marginVertical: 4,
+  },
+  taskDate: {
+    fontSize: 13,
+    color: darkMode ? '#aaa' : '#999',
+  },
+  delete: {
+    fontSize: 20,
+    textAlign: 'right',
+    marginTop: 8,
+    color: darkMode ? '#fff' : '#000',
+  },
 });
